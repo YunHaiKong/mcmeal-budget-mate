@@ -153,42 +153,87 @@ def make_banner(out: str):
 # --------------------------------------------------------------------------
 # 图 2：architecture.png  调用流程
 # --------------------------------------------------------------------------
+def tint(c, f: float = 0.88):
+    """把颜色向白色混合，f 是白色的占比。"""
+    return tuple(int(v + (255 - v) * f) for v in c)
+
+
+def chip(d: ImageDraw.ImageDraw, x, y, s: str, col, f) -> float:
+    """画一个浅色底、深色字的工具名胶囊，返回右边界 x。"""
+    pad_x, h = 12, 27
+    w = tw(d, s, f) + pad_x * 2
+    rrect(d, (x, y, x + w, y + h), 7, fill=tint(col))
+    ink = tuple(int(v * 0.65) for v in col)  # 文字加深，保证浅底上可读
+    text(d, (x + pad_x, y + h / 2 - 1), s, f, ink, anchor="lm")
+    return x + w
+
+
 def make_architecture(out: str):
-    W, H = 1180, 1010
+    W = 1180
+    steps = [
+        ("①", "确认时间", ["now-time-info"], "判断当前供餐时段，决定菜单范围与券的有效性", BLUE),
+        ("②", "定位门店", ["query-nearby-stores", "delivery-query-stores"], "拿到 storeCode（外送场景先查收货地址）", BLUE),
+        ("③", "拉菜单与营养", ["query-meals", "query-meal-detail", "list-nutrition-foods"], "候选餐品池 + 套餐组成 + 每项热量", GREEN),
+        ("④", "收集优惠", ["available-coupons", "auto-bind-coupons", "query-my-coupons", "query-store-coupons", "campaign-calendar"], "四路券合并去重，再把当月活动折算成额外优惠", YELLOW),
+        ("⑤", "本地求解", ["scripts/optimize.py"], "在约束下搜索实付最低的组合（快速解 + 精确解）", PURPLE),
+        ("⑥", "官方计价复核", ["calculate-price"], "用麦当劳真实计价覆盖本地估算（含配送费、包装费）", GREEN),
+        ("⑦", "呈现方案", ["SKILL.md"], "本地编排输出：原价 → 优惠 → 实付 → 省了多少，附热量", GRAY),
+        ("⑧", "一键下单", ["create-order"], "仅在用户明确同意后执行，返回到店取餐码或支付链接", RED),
+    ]
+
+    # 先按内容算出每张卡的高度（工具胶囊可能换行）
+    f_title, f_chip, f_desc = font(21, "bold"), font(15, "mono"), font(16)
+    chip_h, chip_gap, row_h = 27, 8, 36
+    box_x0, box_x1 = 118, W - 56
+    measure = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+
+    def chip_rows(tools):
+        rows, cx = 1, box_x0 + 30
+        for t in tools:
+            w = tw(measure, t, f_chip) + 24
+            if cx + w > box_x1 - 30:
+                rows += 1
+                cx = box_x0 + 30
+            cx += w + chip_gap
+        return rows
+
+    heights = [int(18 + 30 + 10 + chip_rows(tools) * row_h + 16) for _, _, tools, _, _ in steps]
+
+    H = 152 + sum(heights) + (len(steps) - 1) * 26 + 40
     img = Image.new("RGB", (W, H), (252, 252, 253))
     d = ImageDraw.Draw(img)
 
     text(d, (56, 46), "「麦麦饭搭子」如何调用麦当劳 MCP", font(34, "bold"), DARK)
     text(d, (56, 96), "11 个 Tool，一条链路：从一句自然语言到实付最低的一餐", font(20), GRAY)
 
-    steps = [
-        ("①", "确认时间", "now-time-info", "判断当前供餐时段，决定菜单范围与券的有效性", BLUE),
-        ("②", "定位门店", "query-nearby-stores / delivery-query-stores", "拿到 storeCode（外送场景先查收货地址）", BLUE),
-        ("③", "拉菜单与营养", "query-meals · query-meal-detail · list-nutrition-foods", "候选餐品池 + 套餐组成 + 每项热量", GREEN),
-        ("④", "收集优惠", "available-coupons · auto-bind-coupons · query-my-coupons · query-store-coupons · campaign-calendar", "四路券合并去重，再把当月活动折算成额外优惠", YELLOW),
-        ("⑤", "本地求解", "scripts/optimize.py", "在约束下搜索实付最低的组合（快速解 + 精确解）", PURPLE),
-        ("⑥", "官方计价复核", "calculate-price", "用麦当劳真实计价覆盖本地估算（含配送费、包装费）", GREEN),
-        ("⑦", "呈现方案", "—", "原价 → 优惠 → 实付 → 省了多少，附热量", GRAY),
-        ("⑧", "一键下单", "create-order", "仅在用户明确同意后执行，返回到店取餐码或支付链接", RED),
-    ]
-
     y = 152
-    box_x0, box_x1 = 118, W - 56
-    for num, title, tools, desc, col in steps:
-        h = 78 if len(tools) < 62 else 96
-        rrect(d, (box_x0, y, box_x1, y + h), 14, fill=WHITE, outline=GRAY_LIGHT, width=2)
+    for (num, title, tools, desc, col), h in zip(steps, heights):
+        # 卡片阴影 + 卡体 + 左侧色条
+        rrect(d, (box_x0 + 3, y + 5, box_x1 + 3, y + h + 5), 16, fill=(233, 235, 239))
+        rrect(d, (box_x0, y, box_x1, y + h), 16, fill=WHITE, outline=GRAY_LIGHT, width=2)
         rrect(d, (box_x0, y, box_x0 + 8, y + h), 4, fill=col)
 
-        d.ellipse((44, y + h / 2 - 24, 92, y + h / 2 + 24), fill=col)
+        # 序号圆
+        d.ellipse((42, y + h / 2 - 25, 94, y + h / 2 + 25), fill=col)
+        d.ellipse((48, y + h / 2 - 19, 88, y + h / 2 + 19), outline=WHITE, width=2)
         text(d, (68, y + h / 2), num, font(22, "bold"), WHITE, anchor="mm")
 
-        text(d, (box_x0 + 28, y + 18), title, font(23, "bold"), DARK)
-        text(d, (box_x0 + 28, y + 50), tools, font(17, "regular"), col)
-        text(d, (box_x0 + 28, y + 72), desc, font(17), GRAY)
+        # 标题 + 工具胶囊（自动换行）+ 说明
+        text(d, (box_x0 + 30, y + 16), title, f_title, DARK)
+        cy = y + 56
+        cx = box_x0 + 30
+        for t in tools:
+            w = tw(d, t, f_chip) + 24
+            if cx + w > box_x1 - 30:
+                cy += row_h
+                cx = box_x0 + 30
+            chip(d, cx, cy, t, col, f_chip)
+            cx += w + chip_gap
+        text(d, (box_x0 + 30, cy + chip_h + 10), desc, f_desc, GRAY)
 
         if num != "⑧":
-            arrow_down(d, 68, y + h, y + h + 20)
-        y += h + 20
+            arrow_down(d, 68, y + h + 3, y + h + 23, GRAY_LIGHT, 3)
+        y += h + 26
 
     img.save(out)
     return out
