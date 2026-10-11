@@ -1,0 +1,40 @@
+{
+  "scenario": "工作日午餐 · 2 人 · 预算 50 元 · 想吃得饱又不想太胖",
+  "store": { "code": "SH-0217", "name": "上海南京西路旗舰店" },
+  "constraints": {
+    "people": 2,
+    "budget": 50,
+    "min_calories_per_person": 500,
+    "max_calories_per_person": 900,
+    "must_include_tags": ["主食", "饮品"],
+    "exclude_tags": ["含牛肉"],
+    "max_items": 8,
+    "qty_cap": 2
+  },
+  "menu": [
+    { "code": "D001", "name": "板烧鸡腿堡",   "price": 22.0, "calories": 470, "category": "burger", "tags": ["主食"] },
+    { "code": "D002", "name": "巨无霸",       "price": 25.0, "calories": 520, "category": "burger", "tags": ["主食", "含牛肉"] },
+    { "code": "D003", "name": "麦辣鸡腿堡",   "price": 21.0, "calories": 490, "category": "burger", "tags": ["主食"] },
+    { "code": "D004", "name": "双吉士汉堡",   "price": 17.0, "calories": 430, "category": "burger", "tags": ["主食", "含牛肉"] },
+    { "code": "D005", "name": "麦香鱼",       "price": 16.0, "calories": 340, "category": "burger", "tags": ["主食"] },
+    { "code": "S001", "name": "中薯条",       "price": 11.5, "calories": 340, "category": "side",   "tags": ["小食"] },
+    { "code": "S002", "name": "小薯条",       "price": 9.0,  "calories": 230, "category": "side",   "tags": ["小食"] },
+    { "code": "S003", "name": "麦乐鸡 5 块",  "price": 12.0, "calories": 250, "category": "side",   "tags": ["小食"] },
+    { "code": "S004", "name": "玉米杯",       "price": 8.0,  "calories": 90,  "category": "side",   "tags": ["小食", "低卡"] },
+    { "code": "S005", "name": "蔬菜沙拉",     "price": 9.5,  "calories": 70,  "category": "side",   "tags": ["小食", "低卡"] },
+    { "code": "R001", "name": "中可乐",       "price": 9.5,  "calories": 150, "category": "drink",  "tags": ["饮品"] },
+    { "code": "R002", "name": "小可乐",       "price": 8.0,  "calories": 110, "category": "drink",  "tags": ["饮品"] },
+    { "code": "R003", "name": "无糖可乐",     "price": 9.5,  "calories": 1,   "category": "drink",  "tags": ["饮品", "低卡"] },
+    { "code": "R004", "name": "橙汁",         "price": 12.0, "calories": 160, "category": "drink",  "tags": ["饮品"] },
+    { "code": "R005", "name": "美式咖啡",     "price": 13.0, "calories": 5,   "category": "drink",  "tags": ["饮品", "低卡"] },
+    { "code": "C001", "name": "板烧鸡腿堡套餐", "price": 32.0, "calories": 810, "category": "combo", "tags": ["主食", "套餐", "小食", "饮品"] },
+    { "code": "C002", "name": "麦香鱼套餐",     "price": 27.0, "calories": 640, "category": "combo", "tags": ["主食", "套餐", "小食", "饮品"] }
+  ],
+  "coupons": [
+    { "id": "CP-01", "name": "满 30 减 7",       "kind": "threshold", "threshold": 30.0, "discount": 7.0,   "scope_tags": [] },
+    { "id": "CP-02", "name": "满 45 减 12",      "kind": "threshold", "threshold": 45.0, "discount": 12.0,  "scope_tags": [] },
+    { "id": "CP-03", "name": "小食满 20 减 5",   "kind": "threshold", "threshold": 20.0, "discount": 5.0,   "scope_tags": ["小食"] },
+    { "id": "CP-04", "name": "板烧鸡腿堡第二份半价", "kind": "second_half", "target_code": "D001" },
+    { "id": "CP-05", "name": "全场 9 折（最高减 6）", "kind": "percent", "rate": 0.9, "cap": 6.0, "scope_tags": [] }
+  ]
+}

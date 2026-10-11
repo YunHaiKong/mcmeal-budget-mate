@@ -1,0 +1,19 @@
+# 参赛声明与安全要求：本仓库不得包含任何真实凭证
+mcp.json
+*.local.json
+.env
+.env.*
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
