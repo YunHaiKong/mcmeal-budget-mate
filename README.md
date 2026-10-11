@@ -110,17 +110,17 @@ python tests/test_optimize.py
       "type": "streamablehttp",
       "url": "https://mcp.mcd.cn",
       "headers": {
-        "Authorization": "Bearer YOUR_MCP_TOKEN"
+        "Authorization": "Bearer ${MCD_MCP_TOKEN}"
       }
     }
   }
 }
 ```
 
-把 `YOUR_MCP_TOKEN` 换成你自己的 Token，保存后回到【自定义连接器】把 `mcd-mcp` 启用。
+把 `${MCD_MCP_TOKEN}` 换成你自己的 Token（或用环境变量注入），保存后回到【自定义连接器】把 `mcd-mcp` 启用。
 
 > ⚠️ **不要把真实 Token 写进任何提交到仓库的文件。** 本仓库所有示例配置都使用
-> `YOUR_MCP_TOKEN` 占位符，符合参赛声明的信息安全要求。
+> `${MCD_MCP_TOKEN}` 环境变量占位符，符合参赛声明的信息安全要求。
 
 ### 3. 载入本 Skill
 
@@ -200,7 +200,7 @@ mcmeal-budget-mate/
 │   ├── lunch_for_two.json            # 自包含的合成示例（离线可跑）
 │   └── mcd-real-menu-2026-10-11.json # 真实门店菜单 + 官方营养数据（可复现）
 ├── images/                           # 由 scripts/make_images.py 生成的配图
-└── mcp.example.json                  # MCP 配置模板（占位符，无真实 Token）
+└── mcp-config.example.json           # MCP 配置示例（仅环境变量占位符 ${MCD_MCP_TOKEN}）
 ```
 
 ## 免责声明

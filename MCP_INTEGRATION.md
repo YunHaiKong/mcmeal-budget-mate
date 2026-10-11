@@ -14,7 +14,7 @@
 | 开放平台 | https://open.mcd.cn/mcp |
 | 限流 | 每个 Token 每分钟 600 次请求，超限返回 429 |
 
-MCP 客户端配置（本项目的 `mcp.example.json` 即为该模板，占位符不含真实 Token）：
+MCP 客户端配置（本项目的 `mcp-config.example.json` 即为该模板，Token 一律用环境变量 `${MCD_MCP_TOKEN}` 占位，不含任何真实凭据）：
 
 ```json
 {
@@ -23,7 +23,7 @@ MCP 客户端配置（本项目的 `mcp.example.json` 即为该模板，占位�
       "type": "streamablehttp",
       "url": "https://mcp.mcd.cn",
       "headers": {
-        "Authorization": "Bearer YOUR_MCP_TOKEN"
+        "Authorization": "Bearer ${MCD_MCP_TOKEN}"
       }
     }
   }

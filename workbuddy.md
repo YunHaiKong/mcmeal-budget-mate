@@ -65,7 +65,7 @@ WorkBuddy 按官方指南写出了 `~/.workbuddy/mcp.json`：
 }
 ```
 
-仓库内只保留 `mcp.example.json` 占位符版本，符合参赛声明的信息安全要求。
+仓库内只保留 `mcp-config.example.json` 示例版本（Token 用环境变量 `${MCD_MCP_TOKEN}` 占位），符合参赛声明的信息安全要求。
 
 ### 3.2 算法内核的五轮迭代
 
