@@ -102,6 +102,53 @@ class TestBasics(unittest.TestCase):
         self.assertGreaterEqual(res.basket.counts.get("D005", 0), 2)
         self.assertAlmostEqual(res.payable, 24.0, places=6)
 
+    def test_calorie_floor_respects_budget(self):
+        """
+        回归用例：补热量缺口时不能只按"每卡路里单价最低"来挑。
+        这里 T 的每卡单价更便宜，但为了够热量买它会把订单顶出预算；
+        正确做法是买更贵单价、但绝对花费更低的 S。
+        """
+        menu = [
+            mk("Q", "套餐", 28.0, 805, ["主食", "饮品"]),
+            mk("P", "小食", 7.0, 30, ["小食"]),
+            mk("T", "大份高效小食", 20.0, 900, ["小食"]),
+            mk("S", "小份高卡小食", 8.0, 180, ["小食"]),
+        ]
+        cons = opt.Constraints(people=2, budget=50, max_items=4, qty_cap=2,
+                               must_include_tags=["主食", "饮品"],
+                               min_calories_per_person=500)
+        res = opt.solve(menu, [], cons)
+        self.assertIsNotNone(res, "应当存在 43 元的可行解")
+        self.assertAlmostEqual(res.payable, 43.0, places=6)
+        self.assertGreaterEqual(res.calories, 1000)
+        self.assertEqual(res.basket.counts.get("S"), 1)
+
+    def test_free_item_coupon(self):
+        """免费单品券：只有篮子里真的含该商品时才抵扣，且只免一份。"""
+        buns = opt.Item("D005", "麦香鱼", 16.0, 340, ["主食"])
+        corn = opt.Item("S004", "玉米杯", 8.0, 90, ["小食"])
+        c = opt.Coupon(cid="F", name="免费玉米杯", kind="free_item", target_code="S004")
+        self.assertAlmostEqual(opt.coupon_discount(c, [buns]), 0.0)
+        self.assertAlmostEqual(opt.coupon_discount(c, [buns, corn]), 8.0)
+        self.assertAlmostEqual(opt.coupon_discount(c, [buns, corn, corn]), 8.0)
+
+    def test_bogo_coupon(self):
+        """买一送一券：每两份免一份的钱。"""
+        it = opt.Item("D001", "板烧鸡腿堡", 22.0, 470, ["主食"])
+        c = opt.Coupon(cid="G", name="板烧买一送一", kind="bogo", target_code="D001")
+        self.assertAlmostEqual(opt.coupon_discount(c, [it]), 0.0)
+        self.assertAlmostEqual(opt.coupon_discount(c, [it, it]), 22.0)
+        self.assertAlmostEqual(opt.coupon_discount(c, [it, it, it, it]), 44.0)
+
+    def test_bogo_changes_basket(self):
+        """买一送一应当让求解器主动选两份被券覆盖的商品。"""
+        cons = opt.Constraints(people=2, budget=40, max_items=4, must_include_tags=["主食"])
+        coupons = [opt.Coupon(cid="G", name="板烧买一送一", kind="bogo", target_code="D001")]
+        res = opt.solve(DEMO_MENU, coupons, cons)
+        self.assertEqual(res.coupon.cid, "G")
+        self.assertEqual(res.basket.counts.get("D001"), 2)
+        self.assertAlmostEqual(res.payable, 22.0, places=6)
+
     def test_percent_coupon(self):
         cons = opt.Constraints(people=2, budget=60, max_items=6, must_include_tags=["主食"])
         coupons = [opt.Coupon(cid="C", name="全场9折", kind="percent", rate=0.9, cap=6)]
@@ -155,16 +202,22 @@ class TestRandomCrossCheck(unittest.TestCase):
                 ))
             coupons = []
             for j in range(rng.randint(0, 3)):
-                kind = rng.choice(["threshold", "threshold", "percent", "second_half"])
+                kind = rng.choice(["threshold", "threshold", "percent", "second_half", "bogo", "free_item"])
                 if kind == "threshold":
                     coupons.append(opt.Coupon(cid=f"P{j}", name=f"满减{j}", kind="threshold",
                                               threshold=rng.choice([25, 30, 45]), discount=rng.choice([5, 7, 12])))
                 elif kind == "percent":
                     coupons.append(opt.Coupon(cid=f"P{j}", name=f"折扣{j}", kind="percent",
                                               rate=0.9, cap=6))
-                else:
+                elif kind == "second_half":
                     coupons.append(opt.Coupon(cid=f"P{j}", name=f"半价{j}", kind="second_half",
                                               target_code=menu[0].code))
+                elif kind == "bogo":
+                    coupons.append(opt.Coupon(cid=f"P{j}", name=f"买一送一{j}", kind="bogo",
+                                              target_code=menu[0].code))
+                else:
+                    coupons.append(opt.Coupon(cid=f"P{j}", name=f"免费{j}", kind="free_item",
+                                              target_code=menu[-1].code))
             cons = opt.Constraints(
                 people=rng.randint(1, 2),
                 budget=rng.choice([30, 40, 50, 80, 999]),

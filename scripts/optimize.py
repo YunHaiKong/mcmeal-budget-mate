@@ -35,7 +35,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 BUCKET = 0.5           # 价格分桶步长（元）
 INF = float("inf")
-EXACT_MENU_LIMIT = 22  # 超过这个规模不再走精确搜索
+EXACT_MENU_LIMIT = 40  # 超过这个规模不再走精确搜索（实测 27 项菜单约 4.5 秒）
 NODE_BUDGET = 4_000_000
 
 
@@ -68,12 +68,14 @@ class Item:
 @dataclass
 class Coupon:
     """
-    优惠券，支持四种常见形态：
+    优惠券，支持六种常见形态（按麦当劳真实券型整理）：
 
     - threshold   : 满 threshold 减 discount
     - fixed       : 直接立减 discount（可带门槛）
     - percent     : 打 rate 折（0.85 表示 8.5 折），最多减 cap
     - second_half : target_code 第二份半价
+    - bogo        : target_code 买一送一
+    - free_item   : target_code 免费送一份（如"免费脆薯饼"）
     """
 
     cid: str
@@ -205,6 +207,18 @@ def coupon_discount(coupon: Coupon, basket_items: Sequence[Item]) -> float:
             price = next(i.price for i in basket_items if i.code == coupon.target_code)
             return round(price * 0.5 * (n // 2), 2)
         return 0.0
+    if k in ("bogo", "买一送一"):
+        n = sum(1 for i in basket_items if i.code == coupon.target_code)
+        if n >= 2:
+            price = next(i.price for i in basket_items if i.code == coupon.target_code)
+            return round(price * (n // 2), 2)
+        return 0.0
+    if k in ("free_item", "免费单品"):
+        n = sum(1 for i in basket_items if i.code == coupon.target_code)
+        if n >= 1:
+            price = next(i.price for i in basket_items if i.code == coupon.target_code)
+            return round(price * min(n, 1), 2)
+        return 0.0
     return 0.0
 
 
@@ -236,9 +250,9 @@ def max_possible_discount(coupons: Sequence[Coupon], pool: Sequence[Item], cons:
             best = max(best, c.discount)
         elif k in ("percent", "折扣"):
             best = max(best, min(sub * (1.0 - c.rate), c.cap))
-        elif k in ("second_half", "第二份半价"):
+        elif k in ("second_half", "第二份半价", "bogo", "买一送一", "free_item", "免费单品"):
             price = next((i.price for i in pool if i.code == c.target_code), 0.0)
-            best = max(best, price * 0.5 * cons.qty_cap)
+            best = max(best, price * cons.qty_cap)
     return round(best, 2)
 
 
@@ -302,42 +316,44 @@ def _build_base(pool: Sequence[Item], cons: Constraints, must_tags: Sequence[str
             return None
         basket.add(price_asc[0].code)
 
-    guard = 0
-    while basket.calories(index) < cons.people * cons.min_calories_per_person and guard < 200:
-        guard += 1
-        cheapest, cheapest_cost = None, INF
-        for it in pool:
-            if basket.counts.get(it.code, 0) >= cons.qty_cap or it.calories <= 0:
-                continue
-            if basket.n_items() >= cons.max_items:
-                break
-            cost = it.price / it.calories
-            if cost < cheapest_cost:
-                cheapest, cheapest_cost = it, cost
-        if cheapest is None:
-            break
-        basket.add(cheapest.code)
+    # 3) 热量下限：用同一个 DP 求"最少花费补足热量缺口"。
+    #    注意这里必须用 DP 而不是贪心——贪心按"每卡路里单价"选，很容易为了够热量
+    #    塞进一个贵套餐，把自己顶出预算（真实菜单上踩过这个坑）。
+    need = cons.people * cons.min_calories_per_person - basket.calories(index)
+    extra = cons.max_items - basket.n_items()
+    if need > 1e-9 and extra > 0:
+        filled = _min_add_generic(pool, basket, need, extra, cons.qty_cap,
+                                  value_of=lambda it: it.calories, bucket=10.0)
+        if filled is not None:
+            basket = filled
     return basket
 
 
-def _min_add_to_reach(
+def _min_add_generic(
     pool: Sequence[Item],
     basket: Basket,
     need: float,
     max_extra_items: int,
     qty_cap: int,
+    value_of,
+    bucket: float,
 ) -> Optional[Basket]:
     """
-    在 basket 基础上追加最便宜的若干餐品，使小计 >= 原小计 + need。
-    有界背包 DP：dp[i][j] = 用 i 件加购、金额分桶为 j 时的最小花费。
+    在 basket 基础上追加最便宜的若干餐品，使"追加部分的价值之和" >= need，且追加花费最小。
+    价值可以是金额（凑满减门槛）也可以是热量（够热量下限）——两者共用同一个有界背包 DP。
+
+    dp[i][j] = 用 i 件加购、价值分桶为 j 时的最小花费。
     """
     if need <= 1e-9:
         return basket.copy()
     if max_extra_items <= 0:
         return None
 
-    max_price = max((it.price for it in pool), default=0.0)
-    steps = int(math.ceil((need + max_price + BUCKET) / BUCKET))
+    max_val = max((value_of(it) for it in pool), default=0.0)
+    if max_val <= 0:
+        return None
+
+    steps = int(math.ceil((need + max_val + bucket) / bucket))
     dp = [[INF] * (steps + 1) for _ in range(max_extra_items + 1)]
     choice: List[List[Optional[Tuple[str, int]]]] = [[None] * (steps + 1) for _ in range(max_extra_items + 1)]
     dp[0][0] = 0.0
@@ -348,13 +364,16 @@ def _min_add_to_reach(
             if row[j] == INF:
                 continue
             for it in pool:
+                v = value_of(it)
+                if v <= 0:
+                    continue
                 allowed = qty_cap - basket.counts.get(it.code, 0)
                 if allowed <= 0:
                     continue
                 for q in range(1, allowed + 1):
                     if i + q > max_extra_items:
                         break
-                    nj = j + int(round(it.price * q / BUCKET))
+                    nj = j + int(round(v * q / bucket))
                     if nj > steps:
                         continue
                     cost = row[j] + it.price * q
@@ -362,7 +381,7 @@ def _min_add_to_reach(
                         dp[i + q][nj] = cost
                         choice[i + q][nj] = (it.code, q)
 
-    target = int(math.ceil(need / BUCKET))
+    target = int(math.ceil(need / bucket))
     best_state, best_cost = None, INF
     for i in range(max_extra_items + 1):
         for j in range(target, steps + 1):
@@ -371,15 +390,27 @@ def _min_add_to_reach(
     if best_state is None:
         return None
 
-    price_of = {it.code: it.price for it in pool}
+    value_index = {it.code: value_of(it) for it in pool}
     i, j = best_state
     newb = basket.copy()
     while i > 0 and choice[i][j] is not None:
         code, q = choice[i][j]  # type: ignore[misc]
         newb.add(code, q)
-        j -= int(round(price_of[code] * q / BUCKET))
+        j -= int(round(value_index[code] * q / bucket))
         i -= q
     return newb
+
+
+def _min_add_to_reach(
+    pool: Sequence[Item],
+    basket: Basket,
+    need: float,
+    max_extra_items: int,
+    qty_cap: int,
+) -> Optional[Basket]:
+    """花最少的钱把篮子的小计顶过 need（用于满减门槛）。"""
+    return _min_add_generic(pool, basket, need, max_extra_items, qty_cap,
+                            value_of=lambda it: it.price, bucket=BUCKET)
 
 
 def solve_fast(menu: Sequence[Item], coupons: Sequence[Coupon], cons: Constraints) -> Optional[Result]:
@@ -394,12 +425,16 @@ def solve_fast(menu: Sequence[Item], coupons: Sequence[Coupon], cons: Constraint
         return None
 
     baskets: List[Basket] = [base.copy()]
+    anchor_need = {
+        "second_half": 2, "第二份半价": 2,
+        "bogo": 2, "买一送一": 2,
+        "free_item": 1, "免费单品": 1,
+    }
     for c in coupons:
-        # 若券指定了商品（第二份半价），先把它锚进保底篮子
-        anchors = list(cons.must_include_tags)
-        if c.kind in ("second_half", "第二份半价") and c.target_code:
+        # 若券指定了商品（第二份半价/买一送一/免费单品），先把它锚进保底篮子
+        if c.kind in anchor_need and c.target_code:
             b = base.copy()
-            need_cnt = 2 - b.counts.get(c.target_code, 0)
+            need_cnt = anchor_need[c.kind] - b.counts.get(c.target_code, 0)
             if need_cnt > 0 and b.n_items() + need_cnt <= cons.max_items:
                 b.add(c.target_code, need_cnt)
                 baskets.append(b)
